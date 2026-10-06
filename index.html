@@ -3090,7 +3090,7 @@ function renderAccounts(box) {
           ${String(item.name || '').toLowerCase() === 'cash' && String(item.type || '').toLowerCase() === 'cash' ? '' : `<button class="secondary" onclick='archiveAccount(${encoded})'>ARCHIVE ACCOUNT</button>`}
         </div>
       </div>`;
-    }).join('') : '<div class="helper" style="margin-top:14px;">Cash is built in. Add a bank, e-wallet, or other account when needed.</div>'}`;
+    }).join('') : '<div class="helper" style="margin-top:14px;">Cash is built in automatically. If it does not appear yet, refresh once after the latest app update.</div>'}`;
 }
 
 function toggleAccountMenu(id) {
@@ -3245,9 +3245,21 @@ function filterHistory() {
 
 function budgetRepeatOptions(selected) {
   const current = selected || 'No Repeat';
-  return ['No Repeat', 'Weekly', 'Every 2 Weeks', 'Monthly'].map(function(value) {
+  return ['No Repeat', 'Weekly', 'Every 2 Weeks', 'Monthly', 'Custom Date'].map(function(value) {
     return '<option' + (current === value ? ' selected' : '') + '>' + value + '</option>';
   }).join('');
+}
+
+function ordinalSuffix(day) {
+  const n = Number(day || 0);
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return 'th';
+  switch (n % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
 }
 
 function budgetRepeatLabel(record) {
@@ -3267,7 +3279,11 @@ function budgetRepeatLabel(record) {
   }
 
   if (repeat === 'Monthly') {
-    return 'Every month on day ' + date.getDate();
+    return 'Monthly · every ' + date.getDate() + ordinalSuffix(date.getDate());
+  }
+
+  if (repeat === 'Custom Date') {
+    return 'Every month on the ' + date.getDate() + ordinalSuffix(date.getDate());
   }
 
   return repeat;
@@ -3282,9 +3298,13 @@ function toggleBudgetRepeatDue(mode) {
   due.required = repeat !== 'No Repeat';
 
   if (helper) {
-    helper.textContent = repeat === 'No Repeat'
-      ? 'Due date is optional for a one-time budget item.'
-      : 'Choose the first due/start date. My Money will rotate this item automatically.';
+    if (repeat === 'No Repeat') {
+      helper.textContent = 'Due date is optional for a one-time budget item.';
+    } else if (repeat === 'Custom Date') {
+      helper.textContent = 'Choose a date, e.g. Oct 28. It will repeat every month on the 28th.';
+    } else {
+      helper.textContent = 'Choose the first due/start date. My Money will rotate this item automatically.';
+    }
   }
 }
 
@@ -3853,5 +3873,3 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
-
-
