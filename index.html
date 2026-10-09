@@ -2303,6 +2303,15 @@ async function bootstrapApp(pinUnlocked, backgroundRefresh) {
         clearStatus('transactionStatus');
         renderTransactionFields();
 
+        // Always repaint the currently visible Manage view after the latest
+        // backend bootstrap arrives. This makes newly-created built-in Cash
+        // appear immediately even when an older cached bootstrap was shown
+        // right after PIN unlock.
+        const manageSection = document.getElementById('manageSection');
+        if (manageSection && !manageSection.classList.contains('hidden')) {
+          renderManage();
+        }
+
         if (!currentUser.preferencesConfigured) {
           setTimeout(openFirstTimeSetup, 80);
         } else {
@@ -3102,7 +3111,7 @@ function showAddAccountForm() {
   document.getElementById('addAccountForm').innerHTML = `
     <div class="record"><div class="record-title">Add Account</div>
       <label>Account Name</label><input id="newAccountName" required placeholder="BPI, BDO, Maya, etc.">
-      <label>Account Type</label><select id="newAccountType" required onchange="toggleOtherAccountType('new')"><option value="">Select</option><option>Bank</option><option>E-Wallet</option><option>Cash</option><option>Savings</option><option>Other</option></select>
+      <label>Account Type</label><select id="newAccountType" required onchange="toggleOtherAccountType('new')"><option value="">Select</option><option>Bank</option><option>E-Wallet</option><option>Savings</option><option>Other</option></select>
       <div id="newOtherAccountTypeWrap" class="hidden">
         <label>Specify Account Type</label><input id="newOtherAccountType" placeholder="e.g. Cooperative, Payroll Card, Investment Wallet">
       </div>
@@ -3873,3 +3882,7 @@ if ('serviceWorker' in navigator) {
 
 </body>
 </html>
+
+
+
+
