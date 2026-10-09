@@ -1235,15 +1235,15 @@
     <div id="installAndroidSteps" class="install-steps hidden">
       <strong>Android</strong>
       <ol>
-        <li>Tap <strong>COPY APP LINK</strong> below. The official My Money link is already attached to the button.</li>
-        <li>Open <strong>Google Chrome</strong>, paste the link in the address bar, then tap Enter.</li>
-        <li>Wait a few seconds for My Money to load.</li>
-        <li>Tap <strong>INSTALL APP</strong> when it appears.</li>
+        <li>Tap <strong>INSTALL MY MONEY</strong>.</li>
+        <li>Confirm the install prompt.</li>
         <li>After installation, open <strong>My Money</strong> from your Home Screen.</li>
+        <li>Only after opening the installed app will Sign In / Create Account appear.</li>
       </ol>
-      <button class="copy-link-btn" type="button" onclick="copyMyMoneyLink(this)">COPY APP LINK</button>
-      <button id="nativeInstallButton" class="native-install-btn hidden" type="button" onclick="promptNativeInstall()">INSTALL APP</button>
-      <div class="install-note">If you opened this inside Messenger, WhatsApp, Viber, or another in-app browser, copy the link and continue in Chrome.</div>
+      <button id="nativeInstallButton" class="native-install-btn hidden" type="button" onclick="promptNativeInstall()">INSTALL MY MONEY</button>
+      <div id="androidInstallWaiting" class="install-note">Preparing the install button… If it does not appear, open this link in Google Chrome.</div>
+      <div class="install-note"><strong>Opened from Messenger / WhatsApp / Viber?</strong> Use the fallback below, then paste the link into Chrome.</div>
+      <button class="copy-link-btn" type="button" onclick="copyMyMoneyLink(this)">COPY APP LINK — FALLBACK</button>
     </div>
 
     <div id="installIphoneSteps" class="install-steps hidden">
@@ -1254,11 +1254,12 @@
         <li>Tap <strong>Share</strong>.</li>
         <li>Choose <strong>Add to Home Screen</strong>, then confirm.</li>
         <li>Open <strong>My Money</strong> from your Home Screen.</li>
+        <li>Sign In / Create Account will appear only after opening the installed app.</li>
       </ol>
       <button class="copy-link-btn" type="button" onclick="copyMyMoneyLink(this)">COPY APP LINK</button>
     </div>
 
-    <button id="installGateContinue" class="primary install-continue hidden" type="button" onclick="finishInstallGate()">I'M READY — CONTINUE TO SIGN IN</button>
+    <button id="installGateContinue" class="primary install-continue hidden" type="button" onclick="finishInstallGate()">I’VE INSTALLED IT — OPEN FROM HOME SCREEN</button>
   </div>
 </div>
 
@@ -4252,9 +4253,13 @@ function escapeHtml(value) {
     if (button) button.classList.add('hidden');
   }
 
-  loadStoredAuth();
-  if (AUTH && AUTH.refreshToken) {
-    lockForReopen();
+  // IMPORTANT INSTALL FLOW:
+  // While the customer is still on the normal browser link, do not expose
+  // Sign In / Create Account / PIN behind the install walkthrough.
+  // Authentication routing starts only after the install gate has been
+  // completed, or when My Money is opened as the installed standalone app.
+  if (shouldStartAuthFlowNow()) {
+    startAuthFlowAfterInstall();
   }
 })();
 
@@ -4298,7 +4303,60 @@ function officialAppLink() {
 }
 
 function installGateKey() {
-  return 'myMoneyInstallWalkthrough:v1';
+  return 'myMoneyInstallWalkthrough:v2';
+}
+
+function installFlowPendingKey() {
+  return 'myMoneyInstallFlowPending:v1';
+}
+
+function installTestMode() {
+  // TEST MODE: opening the normal web link always shows How to Install first,
+  // even if this browser has an existing My Money account/PIN.
+  return true;
+}
+
+function shouldStartAuthFlowNow() {
+  if (isMyMoneyStandalone()) return true;
+  if (installTestMode()) return false;
+  try {
+    return localStorage.getItem(installGateKey()) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+function startAuthFlowAfterInstall() {
+  // When the user has just come from the install walkthrough, force a clean
+  // Sign In/Create Account screen. Old browser auth/PIN must not jump ahead.
+  let freshInstalledLaunch = false;
+  try {
+    freshInstalledLaunch = localStorage.getItem(installFlowPendingKey()) === '1';
+  } catch (e) {}
+
+  if (isMyMoneyStandalone() && freshInstalledLaunch) {
+    try {
+      localStorage.removeItem('pftAuth');
+      localStorage.removeItem(installFlowPendingKey());
+    } catch (e) {}
+    AUTH = null;
+    currentUser = null;
+    const login = document.getElementById('loginSection');
+    const pin = document.getElementById('pinSection');
+    const app = document.getElementById('appSection');
+    if (pin) pin.classList.add('hidden');
+    if (app) app.classList.add('hidden');
+    if (login) login.classList.remove('hidden');
+    return;
+  }
+
+  loadStoredAuth();
+  if (AUTH && AUTH.refreshToken) {
+    lockForReopen();
+  } else {
+    const login = document.getElementById('loginSection');
+    if (login) login.classList.remove('hidden');
+  }
 }
 
 function showInstallPlatform(platform) {
@@ -4339,9 +4397,21 @@ async function promptNativeInstall() {
 }
 
 function finishInstallGate() {
-  try { localStorage.setItem(installGateKey(), '1'); } catch (e) {}
-  const gate = document.getElementById('installGate');
-  if (gate) gate.classList.add('hidden');
+  // Browser visitors should not continue into Sign In during the install stage.
+  // This button is kept mainly for iPhone/manual fallback instructions.
+  try {
+    localStorage.setItem(installGateKey(), '1');
+    localStorage.setItem(installFlowPendingKey(), '1');
+  } catch (e) {}
+
+  if (isMyMoneyStandalone()) {
+    const gate = document.getElementById('installGate');
+    if (gate) gate.classList.add('hidden');
+    startAuthFlowAfterInstall();
+    return;
+  }
+
+  alert('Install My Money first, then open it from your Home Screen. Sign In / Create Account will appear inside the installed app.');
 }
 
 function maybeShowInstallGate() {
@@ -4350,12 +4420,25 @@ function maybeShowInstallGate() {
 
   if (isMyMoneyStandalone()) {
     gate.classList.add('hidden');
+    startAuthFlowAfterInstall();
     return;
   }
 
-  let seen = false;
-  try { seen = localStorage.getItem(installGateKey()) === '1'; } catch (e) {}
-  gate.classList.toggle('hidden', seen);
+  // TEST MODE: always show install instructions on the normal browser link.
+  gate.classList.remove('hidden');
+  try { localStorage.setItem(installFlowPendingKey(), '1'); } catch (e) {}
+
+  // Hide all auth/app surfaces while the install walkthrough is active.
+  const login = document.getElementById('loginSection');
+  const pin = document.getElementById('pinSection');
+  const app = document.getElementById('appSection');
+  const role = document.getElementById('roleGate');
+  const viewer = document.getElementById('viewerInviteGate');
+  if (login) login.classList.add('hidden');
+  if (pin) pin.classList.add('hidden');
+  if (app) app.classList.add('hidden');
+  if (role) role.classList.add('hidden');
+  if (viewer) viewer.classList.add('hidden');
 }
 
 function installHelpHtml() {
@@ -4380,14 +4463,22 @@ window.addEventListener('beforeinstallprompt', function(event) {
   event.preventDefault();
   deferredInstallPrompt = event;
   const btn = document.getElementById('nativeInstallButton');
+  const waiting = document.getElementById('androidInstallWaiting');
   if (btn) btn.classList.remove('hidden');
+  if (waiting) waiting.classList.add('hidden');
 });
 
 window.addEventListener('appinstalled', function() {
   deferredInstallPrompt = null;
-  try { localStorage.setItem(installGateKey(), '1'); } catch (e) {}
+  try {
+    localStorage.setItem(installGateKey(), '1');
+    localStorage.setItem(installFlowPendingKey(), '1');
+  } catch (e) {}
+  // Keep the browser page on the install screen. The customer must open the
+  // newly installed My Money icon; only there do Sign In/Create Account appear.
   const gate = document.getElementById('installGate');
-  if (gate) gate.classList.add('hidden');
+  if (gate) gate.classList.remove('hidden');
+  alert('My Money is installed. Open My Money from your Home Screen to continue.');
 });
 
 window.addEventListener('load', maybeShowInstallGate);
@@ -4415,6 +4506,7 @@ window.addEventListener('load', maybeShowInstallGate);
 
 </body>
 </html>
+
 
 
 
